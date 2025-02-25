@@ -1,0 +1,335 @@
+---
+title: "Final.Project_HungNguyen"
+author: "Hung Nguyen"
+date: "5/12/2021"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+install.packages("dplyr")
+library(ggplot2)
+library(reshape)
+library(tidyverse)
+```
+To begin with, we spotted there are some weird value in the data including "-" in the floor variable, "Incluso" in HOA
+and also in the propertyTax. Moreover, we alo spotted "SemInfo" in hoa column.
+We decided to use na.strings to remove these error and replace it with NA value
+
+We also remove the first column which is ID and not related to analysis part.
+
+
+```{r}
+Rental.df<-read.csv("RentalProperties.csv", na.strings = c("-","Incluso","Sem info",NA))
+Rental.df<- Rental.df[-1]
+View(Rental.df)
+```
+We also spotted that there was a strange "R" in the monetary column like hoa, rentAmount, PropertyTax and fireInsurance,so
+we decided that we will remove these letters by substr() 
+
+
+```{r}
+Rental.df$hoa <- substr(Rental.df$hoa,3,8)
+Rental.df$rentAmount <- substr(Rental.df$rentAmount,3,8)
+Rental.df$propertyTax <- substr(Rental.df$propertyTax,3,8)
+Rental.df$fireInsurance <- substr(Rental.df$fireInsurance,3,8)
+View(Rental.df)
+```
+
+
+Beside the strange letter"R" in these columns mentioned above, we also want to clean the "," in the money amount
+in order to make it easier for the system to utilize the data.
+
+
+```{r}
+Rental.df$hoa <- gsub(",","",Rental.df$hoa)
+Rental.df$rentAmount <- gsub(",","",Rental.df$rentAmount)
+Rental.df$propertyTax <- gsub(",","",Rental.df$propertyTax)
+Rental.df$fireInsurance <- gsub(",","",Rental.df$fireInsurance)
+View(Rental.df)
+```
+
+
+The data look much better for now, however there are still some NA value need to be dealed with and now we are focusing
+on it. The goal is to replace these NA with the median of these variables respectively.
+First of all, we convert these variables into interger by as.interger() and then calculate the median
+
+
+```{r}
+Rental.df$hoa <- as.integer(Rental.df$hoa)
+Rental.df$rentAmount <- as.integer(Rental.df$rentAmount)
+Rental.df$propertyTax <- as.integer(Rental.df$propertyTax)
+Rental.df$fireInsurance <- as.integer(Rental.df$fireInsurance)
+
+# Median calculation
+md.floor <- median(Rental.df$floor, na.rm = TRUE)
+md.floor
+
+md.hoa <- median(Rental.df$hoa, na.rm = TRUE)
+md.hoa
+
+md.rent <- median(Rental.df$rentAmount, na.rm = TRUE)
+md.rent
+
+md.property <- median(Rental.df$propertyTax, na.rm = TRUE)
+md.property
+
+md.fire <- median(Rental.df$fireInsurance, na.rm = TRUE)
+md.fire
+
+```
+
+Now, We replace NA value with calculated median
+
+```{r}
+
+Rental.df[is.na(Rental.df$floor), "floor"] <- md.floor
+Rental.df[is.na(Rental.df$hoa), "hoa"] <- md.hoa
+Rental.df[is.na(Rental.df$rentAmount), "rentAmount"] <- md.rent
+Rental.df[is.na(Rental.df$propertyTax), "propertyTax"] <- md.property
+Rental.df[is.na(Rental.df$fireInsurance), "fireInsurance"] <- md.fire
+View(Rental.df)
+
+```
+
+Checked again and make sure that there is no NA value in this data set.
+
+```{r}
+str(Rental.df)
+
+```
+
+However, we see that there is 2 variable in the factor type which are animal and furniture. In order to do the regression
+to predict the price of accurately we need to convert these two into interger as well.
+We decided to use ifelse() function to make this happend. 1 stand for YES and 0 is NO
+
+
+```{r}
+Rental.df$animal = ifelse(Rental.df$animal == "acept", 1, 0)
+Rental.df$furniture = ifelse(Rental.df$furniture == "furnished", 1, 0)
+View(Rental.df)
+```
+Now we have to clear the outlier in the dataset by getting the Variablity 
+```{r}
+
+ df.summary = data.frame(mean=sapply(Rental.df, mean, na.rm = TRUE), 
+               sd=sapply(Rental.df, sd, na.rm = TRUE), 
+               min=sapply(Rental.df, min, na.rm = TRUE), 
+               max=sapply(Rental.df, max, na.rm = TRUE), 
+               median=sapply(Rental.df, median, na.rm = TRUE))
+
+```
+From this we can say that there are outliers in area,hoa,rentAmount,PropertyTax
+```{r}
+ df.summary$CV = df.summary$sd/df.summary$mean
+ df.summary
+```
+After running the df.summary we found there are couple of outliers in the data and we tried removing it from  the dataset using the following iterations
+```{r}
+#STEP1 ITRETION
+ Rental.df<-Rental.df[!(Rental.df$area=="24606" | Rental.df$hoa=="22000" | Rental.df$rentAmount=="45000" | Rental.df$propertyTax =="36630"),]
+
+#STEP2 ITRETION
+ Rental.df<-Rental.df[!(Rental.df$area=="12732" | Rental.df$hoa=="20000" | Rental.df$rentAmount=="24000" | Rental.df$propertyTax =="31370"),]
+
+#STEP3 ITRETION
+ Rental.df<-Rental.df[!(Rental.df$hoa=="14130"  |Rental.df$propertyTax =="10830" | Rental.df$rentAmount=="20000"),]
+
+#STEP4 ITRETION
+ Rental.df<-Rental.df[!(Rental.df$hoa=="10000"  |Rental.df$propertyTax =="9500" | Rental.df$rentAmount=="19500"),]
+
+```
+We have done four iterations and now we feel that the Data is cleaned.
+
+Coming to the next stage Analysis of the data, we are using seed(10) and creating training(70%) and validaton(30%) data
+```{r}
+set.seed(10)
+train.rows = sample(rownames(Rental.df), dim(Rental.df)[1]*0.70)
+valid.rows = setdiff(rownames(Rental.df), train.rows)
+
+train.data = Rental.df[train.rows,]
+valid.data = Rental.df[valid.rows,]
+```
+Now We have to check the correlation between the prediction variable and other variable effecting the value of prediction by creating a heatmap
+```{r}
+library(reshape)
+library(ggplot2)
+round(cor(Rental.df),2)
+cor.mat=round(cor(Rental.df),2)
+melted.cor.mat <- melt(cor.mat)
+
+par(mfcol = c(1,1))
+ggplot(melted.cor.mat, aes(x = X1, y = X2, fill = value) ) + 
+  geom_tile() + 
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "yellow", high = "brown", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") +
+  geom_text(aes(x = X1, y = X2, label = value),color="black")
+```
+
+After generating the heatmap we found that there are few variable that are correalted with the rentalAmount which are: (Area, bathroom, parking, rooms)
+Now, we do the linear regression using these packages
+
+```{r}
+library(tidyverse)
+library(caret)
+library(leaps)
+rental.lm <- lm(rentAmount ~ .   , data = train.data)
+summary(rental.lm)
+hist(rental.lm$residuals)
+```
+We got the p value <2.2e-16 and i would say the histogram indicate that it is normally distributed.
+We predict and compute the accuracy of lm method
+```{r}
+library(forecast)
+
+rental.lm.pred <- predict(rental.lm, valid.data)
+accuracy(rental.lm.pred, valid.data$rentAmount)
+```
+
+
+
+
+BACKWARD REGRESSION 
+
+Set seed for reproducibility
+Set up repeated k-fold cross-validation and train the model
+set.seed(10)
+```{r}
+train.control <- trainControl(method = "cv", number = 10)
+
+step.model.back <- train(rentAmount ~., data = train.data,
+                    method = "leapBackward", 
+                    tuneGrid = data.frame(nvmax = 1:5),
+                    trControl = train.control
+)
+step.model.back$results
+step.model.back$bestTune
+```
+after doing the bestTue in our results we got the nvmax= 5 as the very less RMSE value which is 474.5202
+```{r}
+summary(step.model.back$finalModel)
+```
+after loking at the summary,an asterisk specifies that a given variable is included in the corresponding model. 
+
+It can be seen that the best 5-variables model contains area, floor, furniture, hoa,fireInsurance
+(rentAmount ~ area+ floor+ furniture+ hoa+ fireInsurance)
+```{r}
+coef(step.model.back$finalModel, 5)
+```
+or alternative way of finding
+```{r}
+lm(rentAmount ~ area+ floor+ furniture+ hoa+ fireInsurance, 
+   data = train.data)
+
+rental.lm.pred.back <- predict(step.model.back, valid.data)
+accuracy(rental.lm.pred.back, valid.data$rentAmount)
+```
+
+
+STEP-WISE REGRESSION
+As there are various functions and packages in R for computing of stepwise regression, stepAIC() which is in MASS Package, we feel the best model is AIC because it has the option of taking stepwise regression, forward regression and backward regression which actually results in the best model
+```{r}
+library(MASS)
+# Fit the full model 
+full.model <- lm(rentAmount ~., data = train.data)
+# Stepwise regression model
+step.model <- stepAIC(full.model, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+
+```
+We fit the full model 
+```{r}
+full.model <- lm(rentAmount ~., data = train.data)
+
+```
+Stepwise regression model
+```{r}
+step.model <- stepAIC(full.model, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+```
+We train the model
+
+```{r}
+step.model <- train(rentAmount ~., data = train.data,
+                    method = "lmStepAIC", 
+                    trControl = train.control,
+                    trace = FALSE
+)
+```
+We inspect model accuracy, final model coefficients and summary of the model
+
+```{r}
+step.model$results
+
+step.model$finalModel
+
+summary(step.model$finalModel)
+```
+Adjusted R-squared:  0.9813 so we can say that it is the best model out of all
+```{r}
+rental.lm.pred.stepwise <- predict(step.model, valid.data)
+accuracy(rental.lm.pred.stepwise, valid.data$rentAmount)
+```
+
+Working on NEW DATA:
+We have repeated the same cleaning process for new data file
+```{r}
+new.data <- read.csv("Newdata.csv")
+View(new.data)
+
+new.data <- read.csv("Newdata.csv", na.strings = c("-","Incluso","Sem info","-",NA))
+new.data <-new.data[-1]
+View(new.data)
+
+
+new.data$hoa <- substr(new.data$hoa,3,8)
+new.data$rentAmount <- substr(new.data$rentAmount,3,8)
+new.data$propertyTax <- substr(new.data$propertyTax,3,8)
+new.data$fireInsurance <- substr(new.data$fireInsurance,3,8)
+
+new.data$hoa <- gsub(",","",new.data$hoa)
+new.data$rentAmount <- gsub(",","",new.data$rentAmount)
+new.data$propertyTax <- gsub(",","",new.data$propertyTax)
+
+new.data$hoa <- as.integer(new.data$hoa)
+new.data$rentAmount <- as.integer(new.data$rentAmount)
+new.data$propertyTax <- as.integer(new.data$propertyTax)
+new.data$fireInsurance <- as.integer(new.data$fireInsurance)
+
+new.data$animal = ifelse(new.data$animal == "acept", 1, 0)
+new.data$furniture = ifelse(new.data$furniture == "furnished", 1, 0)
+
+nd.floor <- median(new.data$floor, na.rm = TRUE)
+nd.floor
+
+nd.floor <- new.data[ is.na(new.data$floor), "floor" ]  
+
+View(new.data)
+```
+The output after the stepwise regression Call:
+lm(formula = .outcome ~ city + area + rooms + bathroom + parking + 
+floor + furniture + hoa + propertyTax + fireInsurance, data = dat)
+```{r}
+
+new.rental.lm = lm(rentAmount ~ city + area + rooms + bathroom + parking + floor + 
+                 furniture + hoa + propertyTax + fireInsurance, data=valid.data)
+
+summary(new.rental.lm)
+```
+Applying the model using predict() on the new.data
+```{r}
+
+new.data.lm.pred <- predict(new.rental.lm, new.data)
+
+new.data.lm.pred
+
+```
+
